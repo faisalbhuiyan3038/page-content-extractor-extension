@@ -11,6 +11,13 @@ chrome.runtime.onInstalled.addListener(() => {
     title: 'Extract All Text',
     contexts: ['page']
   });
+
+  chrome.contextMenus.create({
+    id: 'copyYoutubeTranscript',
+    title: 'Copy YouTube Transcript',
+    contexts: ['page'],
+    documentUrlPatterns: ['*://*.youtube.com/*']
+  });
 });
 
 // Handle context menu click
@@ -26,6 +33,10 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
         action: 'extractAndCopyAllText'
       });
       // No need to handle response, content script handles copying
+    } else if (info.menuItemId === 'copyYoutubeTranscript') {
+      const response = await chrome.tabs.sendMessage(tab.id, {
+        action: 'copyYoutubeTranscript'
+      });
     }
   } catch (error) {
     console.error('Error in context menu handler:', error);

@@ -1,3 +1,275 @@
+// YouTube transcript functionality
+async function getYtVariables() {
+  return new Promise(resolve => {
+    const listener = (event) => {
+      if (event.source === window && event.data?.type === 'put yt data') {
+        const { clientVersion, device } = event.data.value;
+        window.removeEventListener('message', listener);
+        resolve({ clientVersion, device });
+      }
+    };
+
+    window.addEventListener('message', listener);
+    window.postMessage({ 'type': "get yt data" }, '*');
+  });
+}
+
+async function getEnchantedUrl(url) {
+  try {
+    const data = await getYtVariables();
+    const extraString = data.device;
+    const clientVersion = data.clientVersion;
+
+    const urlObject = new URL(url + '&' + extraString);
+    urlObject.searchParams.set('fmt', 'json3');
+    urlObject.searchParams.set('xorb', '2');
+    urlObject.searchParams.set('xobt', '3');
+    urlObject.searchParams.set('xovt', '3');
+    urlObject.searchParams.set('c', 'Web');
+    urlObject.searchParams.set('cplayer', 'UNIPLAYER');
+    urlObject.searchParams.set('cver', clientVersion);
+
+    urlObject.searchParams.delete('ceng');
+    urlObject.searchParams.delete('cengver');
+
+    return urlObject.toString();
+  } catch (error) {
+    console.error('Error getting enchanted URL:', error);
+    return url;
+  }
+}
+
+async function requestTranslationTextTry(url) {
+  const response = await fetch(url);
+  const json = await response.json();
+
+  if (!Array.isArray(json.events) || !json.events.length) throw new Error('Empty data');
+
+  let allEmpty = true;
+  for (const item of json.events) {
+    if (!Array.isArray(item.segs) || item.segs.length === 0) continue;
+
+    for (const seg of item.segs) {
+      if (seg.utf8 && seg.utf8.trim()) {
+        allEmpty = false;
+        break;
+      }
+    }
+    if (!allEmpty) break;
+  }
+
+  if (allEmpty) throw new Error('Empty data');
+
+  return json.events;
+}
+
+async function requestTranslationText(url) {
+  let broken = false;
+
+  try {
+    return await requestTranslationTextTry(url);
+  } catch (error) { }
+  if (broken) return;
+
+  await new Promise(resolve => { setTimeout(resolve, 5000); });
+
+  try {
+    return await requestTranslationTextTry(url);
+  } catch (error) { }
+
+  if (broken) return;
+
+  await new Promise(resolve => { setTimeout(resolve, 10000); });
+
+  try {
+    return await requestTranslationTextTry(url);
+  } catch (error) {
+    throw new Error('Request failed');
+  }
+}
+
+function adaptTranslationData(events) {
+  const objects = [];
+  for (const item of events) {
+    if (!Array.isArray(item.segs) || item.segs.length === 0) continue;
+
+    let segments = new Set();
+    for (const seg of item.segs) {
+      if (seg.utf8 && seg.utf8.trim()) segments.add(seg.utf8);
+    }
+    if (!segments.size) continue;
+
+    let text = '';
+    for (const part of segments) text += part;
+
+    objects.push({
+      start: item.tStartMs / 1000,
+      duration: item.dDurationMs / 1000,
+      text: text
+    });
+  }
+
+  const output = [];
+  let index = 0;
+  let accumTexts = [];
+  let startTime = 0;
+  let length = 0;
+  let timeInfo = {};
+  let current = {};
+
+  const resetVars = () => {
+    index = 0;
+    accumTexts = [];
+    startTime = 0;
+    length = 0;
+    timeInfo = {};
+  };
+
+  objects.forEach((event, i, arr) => {
+    if (current.start && current.text) {
+      timeInfo.start = current.start;
+      accumTexts.push(current.text);
+      current = {};
+    }
+
+    if (index === 0) {
+      timeInfo.start = current.start ? current.start : event.start;
+    }
+    index++;
+
+    const roundedStart = Math.round(timeInfo.start);
+    const roundedEventStart = Math.round(event.start);
+    const timeDiff = roundedEventStart - roundedStart;
+    length += event.text.length;
+    accumTexts.push(event.text);
+
+    if (i === arr.length - 1) {
+      timeInfo.text = accumTexts.join(" ").replace(/\n/g, " ");
+      output.push(timeInfo);
+      resetVars();
+      return;
+    }
+
+    if (timeDiff > 60) {
+      timeInfo.text = accumTexts.join(" ").replace(/\n/g, " ");
+      output.push(timeInfo);
+      resetVars();
+      return;
+    }
+
+    if (length > 300) {
+      if (length < 500) {
+        if (event.text.includes(".")) {
+          const parts = event.text.split(".");
+          if (parts[parts.length - 1].replace(/\s+/g, "") === "") {
+            timeInfo.text = accumTexts.join(" ").replace(/\n/g, " ");
+            output.push(timeInfo);
+            resetVars();
+            return;
+          }
+
+          const lastComplete = parts[parts.length - 2];
+          const splitIndex = event.text.indexOf(lastComplete) + lastComplete.length + 1;
+          const firstPart = event.text.substring(0, splitIndex);
+
+          current.text = event.text.substring(splitIndex);
+          current.start = event.start;
+          accumTexts.splice(accumTexts.length - 1, 1, firstPart);
+          timeInfo.text = accumTexts.join(" ").replace(/\n/g, " ");
+          output.push(timeInfo);
+          resetVars();
+          return;
+        }
+        return;
+      }
+
+      timeInfo.text = accumTexts.join(" ").replace(/\n/g, " ");
+      output.push(timeInfo);
+      resetVars();
+    }
+  });
+
+  return output;
+}
+
+async function getDefaultLanguage() {
+  const data = await chrome.storage.local.get(['defaultLanguage']);
+  return data.defaultLanguage || 'en';
+}
+
+async function saveDefaultLanguage(language) {
+  return chrome.storage.local.set({ 'defaultLanguage': language });
+}
+
+function tracksToBaseUrlByLanguage(tracks, language) {
+  // Try to find non-auto-generated track in requested language
+  let track = tracks.filter(({ kind }) => kind !== 'asr')
+    .find(({ languageCode }) => languageCode === language);
+
+  // If not found, try auto-generated in requested language
+  track ||= tracks.filter(({ kind }) => kind === 'asr')
+    .find(({ languageCode }) => languageCode === language);
+
+  if (track) return track.baseUrl;
+
+  // If no track in requested language, get English track and add translation
+  const enTracks = tracks.filter(({ languageCode }) => languageCode === 'en');
+  let baseUrl = enTracks.find(({ kind }) => kind !== 'asr')?.baseUrl;
+  baseUrl ||= enTracks.find(({ kind }) => kind === 'asr')?.baseUrl;
+  baseUrl ||= tracks[0]?.baseUrl;
+
+  const urlObject = new URL(baseUrl);
+  urlObject.searchParams.set('tlang', language);
+
+  return urlObject.toString();
+}
+
+async function getYoutubeTranscript(targetLanguage = 'en') {
+  const videoId = new URL(window.location.href).searchParams.get('v');
+  if (!videoId) return null;
+
+  try {
+    // Get translation data
+    const response = await fetch('https://www.youtube.com/watch?v=' + videoId);
+    const text = await response.text();
+
+    const jsonString = text.match(/\"captions\"\:([\s\S]+?)\,"videoDetails/)?.[1];
+    if (!jsonString) return null;
+
+    const translation = JSON.parse(jsonString)?.playerCaptionsTracklistRenderer;
+    if (!translation || !translation.captionTracks || !translation.captionTracks.length) {
+      return null;
+    }
+
+    // Get the appropriate URL for the requested language
+    const baseUrl = tracksToBaseUrlByLanguage(translation.captionTracks, targetLanguage);
+    if (!baseUrl) return null;
+
+    // Get the transcript data with enhanced URL
+    const enhancedUrl = await getEnchantedUrl(baseUrl);
+    const events = await requestTranslationText(enhancedUrl);
+
+    if (!events || !events.length) return null;
+
+    // Format the transcript using the adapted data
+    let transcript = document.title + '\n' + window.location.href + '\n\nTranscript:\n';
+    const adaptedEvents = adaptTranslationData(events);
+
+    for (const event of adaptedEvents) {
+      const time = Math.round(event.start);
+      const minutes = Math.floor(time / 60);
+      const seconds = String(time % 60).padStart(2, '0');
+
+      transcript += `(${minutes}:${seconds}) ${event.text}\n`;
+    }
+
+    return transcript;
+  } catch (error) {
+    console.error('Error getting YouTube transcript:', error);
+    return null;
+  }
+}
+
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === 'extractArticle' || request.action === 'extractAndCopyArticle') {
     const text = extractArticleText();
@@ -15,6 +287,60 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     } else {
       sendResponse({ text });
     }
+  } else if (request.action === 'getYoutubeTranscript') {
+    const language = request.language || 'en';
+    getYoutubeTranscript(language).then(transcript => {
+      sendResponse({ transcript });
+    });
+    return true;
+  } else if (request.action === 'copyYoutubeTranscript') {
+    const language = request.language || 'en';
+    getYoutubeTranscript(language).then(transcript => {
+      if (transcript) {
+        copyAndNotify(transcript);
+      } else {
+        showNotification('No transcript available for this video');
+      }
+    });
+    sendResponse({ success: true });
+  } else if (request.action === 'getAvailableLanguages') {
+    (async () => {
+      try {
+        const videoId = new URL(window.location.href).searchParams.get('v');
+        if (!videoId) {
+          sendResponse({ languages: [] });
+          return;
+        }
+
+        const response = await fetch('https://www.youtube.com/watch?v=' + videoId);
+        const text = await response.text();
+        const jsonString = text.match(/\"captions\"\:([\s\S]+?)\,"videoDetails/)?.[1];
+        if (!jsonString) {
+          sendResponse({ languages: [] });
+          return;
+        }
+
+        const translation = JSON.parse(jsonString)?.playerCaptionsTracklistRenderer;
+        if (!translation) {
+          sendResponse({ languages: [] });
+          return;
+        }
+
+        const languages = translation.translationLanguages.map(item => ({
+          code: item.languageCode,
+          name: item.languageName.simpleText
+        }));
+
+        sendResponse({ languages });
+      } catch (error) {
+        console.error('Error getting languages:', error);
+        sendResponse({ languages: [] });
+      }
+    })();
+    return true;
+  } else if (request.action === 'copyText') {
+    copyAndNotify(request.text);
+    sendResponse({ success: true });
   } else if (request.action === 'showNotification') {
     showNotification(request.message);
     sendResponse({ success: true });

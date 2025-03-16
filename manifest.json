@@ -8,7 +8,8 @@
     "contextMenus",
     "scripting",
     "clipboardWrite",
-    "tabs"
+    "tabs",
+    "storage"
   ],
   "action": {
     "default_popup": "popup.html",
@@ -34,6 +35,15 @@
         "Readability.js",
         "content.js"
       ]
+    },
+    {
+      "matches": [
+        "*://*.youtube.com/*"
+      ],
+      "js": [
+        "mainWorld.js"
+      ],
+      "world": "MAIN"
     }
   ],
   "icons": {
