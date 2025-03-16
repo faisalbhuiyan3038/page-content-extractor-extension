@@ -34,6 +34,15 @@
         "Readability.js",
         "content.js"
       ]
+    },
+    {
+      "matches": [
+        "*://*.youtube.com/*"
+      ],
+      "js": [
+        "mainWorld.js"
+      ],
+      "world": "MAIN"
     }
   ],
   "icons": {
