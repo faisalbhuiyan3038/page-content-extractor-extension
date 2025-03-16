@@ -4,6 +4,43 @@ document.addEventListener('DOMContentLoaded', async () => {
   const isYouTube = tab.url.includes('youtube.com/watch');
   document.getElementById('youtubeSection').style.display = isYouTube ? 'block' : 'none';
 
+  // If on YouTube, load available languages
+  if (isYouTube) {
+    const response = await chrome.tabs.sendMessage(tab.id, { action: 'getAvailableLanguages' });
+    const languageSelect = document.getElementById('languageSelect');
+    languageSelect.innerHTML = ''; // Clear loading option
+
+    // Add English as first option
+    const enOption = document.createElement('option');
+    enOption.value = 'en';
+    enOption.textContent = 'English';
+    languageSelect.appendChild(enOption);
+
+    // Add all other languages
+    if (response.languages) {
+      response.languages.forEach(lang => {
+        if (lang.code !== 'en') { // Skip English as it's already added
+          const option = document.createElement('option');
+          option.value = lang.code;
+          option.textContent = lang.name;
+          languageSelect.appendChild(option);
+        }
+      });
+    }
+
+    // Set default language
+    chrome.storage.local.get(['defaultLanguage'], function (result) {
+      if (result.defaultLanguage) {
+        languageSelect.value = result.defaultLanguage;
+      }
+    });
+
+    // Save selected language as default
+    languageSelect.addEventListener('change', function () {
+      chrome.storage.local.set({ 'defaultLanguage': this.value });
+    });
+  }
+
   document.getElementById('viewArticle').addEventListener('click', async () => {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
     const response = await chrome.tabs.sendMessage(tab.id, { action: 'extractArticle' });
@@ -30,7 +67,11 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   document.getElementById('copyTranscript').addEventListener('click', async () => {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-    const response = await chrome.tabs.sendMessage(tab.id, { action: 'getYoutubeTranscript' });
+    const language = document.getElementById('languageSelect').value;
+    const response = await chrome.tabs.sendMessage(tab.id, {
+      action: 'getYoutubeTranscript',
+      language: language
+    });
     if (response.transcript) {
       try {
         await navigator.clipboard.writeText(response.transcript);
@@ -42,6 +83,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         // If clipboard write fails in popup, try copying in the content script
         chrome.tabs.sendMessage(tab.id, {
           action: 'copyYoutubeTranscript',
+          language: language,
           fallback: true
         });
       }

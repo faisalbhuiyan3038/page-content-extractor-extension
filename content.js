@@ -192,7 +192,39 @@ function adaptTranslationData(events) {
   return output;
 }
 
-async function getYoutubeTranscript() {
+async function getDefaultLanguage() {
+  const data = await chrome.storage.local.get(['defaultLanguage']);
+  return data.defaultLanguage || 'en';
+}
+
+async function saveDefaultLanguage(language) {
+  return chrome.storage.local.set({ 'defaultLanguage': language });
+}
+
+function tracksToBaseUrlByLanguage(tracks, language) {
+  // Try to find non-auto-generated track in requested language
+  let track = tracks.filter(({ kind }) => kind !== 'asr')
+    .find(({ languageCode }) => languageCode === language);
+
+  // If not found, try auto-generated in requested language
+  track ||= tracks.filter(({ kind }) => kind === 'asr')
+    .find(({ languageCode }) => languageCode === language);
+
+  if (track) return track.baseUrl;
+
+  // If no track in requested language, get English track and add translation
+  const enTracks = tracks.filter(({ languageCode }) => languageCode === 'en');
+  let baseUrl = enTracks.find(({ kind }) => kind !== 'asr')?.baseUrl;
+  baseUrl ||= enTracks.find(({ kind }) => kind === 'asr')?.baseUrl;
+  baseUrl ||= tracks[0]?.baseUrl;
+
+  const urlObject = new URL(baseUrl);
+  urlObject.searchParams.set('tlang', language);
+
+  return urlObject.toString();
+}
+
+async function getYoutubeTranscript(targetLanguage = 'en') {
   const videoId = new URL(window.location.href).searchParams.get('v');
   if (!videoId) return null;
 
@@ -209,12 +241,12 @@ async function getYoutubeTranscript() {
       return null;
     }
 
-    // Get the first available caption track
-    const track = translation.captionTracks.find(({ kind }) => kind !== 'asr') || translation.captionTracks[0];
-    if (!track) return null;
+    // Get the appropriate URL for the requested language
+    const baseUrl = tracksToBaseUrlByLanguage(translation.captionTracks, targetLanguage);
+    if (!baseUrl) return null;
 
     // Get the transcript data with enhanced URL
-    const enhancedUrl = await getEnchantedUrl(track.baseUrl);
+    const enhancedUrl = await getEnchantedUrl(baseUrl);
     const events = await requestTranslationText(enhancedUrl);
 
     if (!events || !events.length) return null;
@@ -256,12 +288,14 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       sendResponse({ text });
     }
   } else if (request.action === 'getYoutubeTranscript') {
-    getYoutubeTranscript().then(transcript => {
+    const language = request.language || 'en';
+    getYoutubeTranscript(language).then(transcript => {
       sendResponse({ transcript });
     });
     return true;
   } else if (request.action === 'copyYoutubeTranscript') {
-    getYoutubeTranscript().then(transcript => {
+    const language = request.language || 'en';
+    getYoutubeTranscript(language).then(transcript => {
       if (transcript) {
         copyAndNotify(transcript);
       } else {
@@ -269,6 +303,41 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       }
     });
     sendResponse({ success: true });
+  } else if (request.action === 'getAvailableLanguages') {
+    (async () => {
+      try {
+        const videoId = new URL(window.location.href).searchParams.get('v');
+        if (!videoId) {
+          sendResponse({ languages: [] });
+          return;
+        }
+
+        const response = await fetch('https://www.youtube.com/watch?v=' + videoId);
+        const text = await response.text();
+        const jsonString = text.match(/\"captions\"\:([\s\S]+?)\,"videoDetails/)?.[1];
+        if (!jsonString) {
+          sendResponse({ languages: [] });
+          return;
+        }
+
+        const translation = JSON.parse(jsonString)?.playerCaptionsTracklistRenderer;
+        if (!translation) {
+          sendResponse({ languages: [] });
+          return;
+        }
+
+        const languages = translation.translationLanguages.map(item => ({
+          code: item.languageCode,
+          name: item.languageName.simpleText
+        }));
+
+        sendResponse({ languages });
+      } catch (error) {
+        console.error('Error getting languages:', error);
+        sendResponse({ languages: [] });
+      }
+    })();
+    return true;
   } else if (request.action === 'copyText') {
     copyAndNotify(request.text);
     sendResponse({ success: true });

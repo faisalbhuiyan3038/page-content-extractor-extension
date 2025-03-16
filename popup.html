@@ -23,6 +23,11 @@
     #youtubeSection {
       display: none;
     }
+    #languageSelect {
+      width: 100%;
+      margin-bottom: 5px;
+      padding: 5px;
+    }
   </style>
 </head>
 <body>
@@ -38,6 +43,9 @@
   </div>
   <div id="youtubeSection" class="section">
     <div class="section-title">YouTube Tools:</div>
+    <select id="languageSelect">
+      <option value="en">Loading languages...</option>
+    </select>
     <button id="copyTranscript">Copy Video Transcript</button>
   </div>
   <script src="popup.js"></script>
