@@ -1,53 +1,116 @@
 <!DOCTYPE html>
 <html>
 <head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <style>
     body {
-      width: 200px;
-      padding: 10px;
+      width: 300px;
+      margin: 0;
+      padding: 12px;
+      font-family: -apple-system, system-ui, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: #f8f9fa;
     }
+
+    @media (max-width: 480px) {
+      body {
+        width: auto;
+        min-width: 280px;
+      }
+    }
+
+    .section {
+      background: white;
+      padding: 12px;
+      margin-bottom: 12px;
+      border-radius: 6px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    }
+
+    .section:last-child {
+      margin-bottom: 0;
+    }
+
+    .section-title {
+      font-size: 13px;
+      font-weight: 600;
+      color: #333;
+      margin-bottom: 8px;
+    }
+
     button {
+      display: block;
       width: 100%;
-      margin: 5px 0;
-      padding: 8px;
+      padding: 8px 12px;
+      margin-bottom: 8px;
+      border: none;
+      border-radius: 4px;
+      background: #4a90e2;
+      color: white;
+      font-size: 14px;
       cursor: pointer;
     }
-    .section {
-      margin-bottom: 10px;
+
+    button:last-child {
+      margin-bottom: 0;
     }
-    .section-title {
-      font-size: 12px;
-      color: #666;
-      margin-bottom: 5px;
+
+    button:hover {
+      background: #357abd;
     }
+
+    button:active {
+      background: #2d6da3;
+    }
+
+    #languageSelect {
+      width: 100%;
+      padding: 8px;
+      margin-bottom: 8px;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      font-size: 14px;
+      background: white;
+    }
+
     #youtubeSection {
       display: none;
     }
-    #languageSelect {
-      width: 100%;
-      margin-bottom: 5px;
-      padding: 5px;
+
+    @media (max-width: 480px) {
+      button {
+        padding: 12px;
+        font-size: 16px;
+      }
+
+      #languageSelect {
+        padding: 12px;
+        font-size: 16px;
+      }
     }
   </style>
 </head>
 <body>
   <div class="section">
-    <div class="section-title">Article Mode (Clean Format):</div>
+    <div class="section-title">Article Mode</div>
     <button id="viewArticle">View Article Text</button>
     <button id="copyArticle">Copy Article Text</button>
   </div>
+
   <div class="section">
-    <div class="section-title">All Content Mode:</div>
+    <div class="section-title">All Content Mode</div>
     <button id="viewAllText">View All Text</button>
     <button id="copyAllText">Copy All Text</button>
   </div>
+
   <div id="youtubeSection" class="section">
-    <div class="section-title">YouTube Tools:</div>
+    <div class="section-title">YouTube Tools</div>
     <select id="languageSelect">
       <option value="en">Loading languages...</option>
     </select>
     <button id="copyTranscript">Copy Video Transcript</button>
   </div>
+
   <script src="popup.js"></script>
 </body>
 </html>

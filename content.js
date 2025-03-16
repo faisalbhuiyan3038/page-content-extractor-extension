@@ -1,3 +1,6 @@
+// Cross-browser compatibility
+const browserAPI = typeof browser !== 'undefined' ? browser : chrome;
+
 // YouTube transcript functionality
 async function getYtVariables() {
   return new Promise(resolve => {
@@ -193,12 +196,12 @@ function adaptTranslationData(events) {
 }
 
 async function getDefaultLanguage() {
-  const data = await chrome.storage.local.get(['defaultLanguage']);
+  const data = await browserAPI.storage.local.get(['defaultLanguage']);
   return data.defaultLanguage || 'en';
 }
 
 async function saveDefaultLanguage(language) {
-  return chrome.storage.local.set({ 'defaultLanguage': language });
+  return browserAPI.storage.local.set({ 'defaultLanguage': language });
 }
 
 function tracksToBaseUrlByLanguage(tracks, language) {
@@ -270,23 +273,25 @@ async function getYoutubeTranscript(targetLanguage = 'en') {
   }
 }
 
-chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+browserAPI.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === 'extractArticle' || request.action === 'extractAndCopyArticle') {
     const text = extractArticleText();
     if (request.action === 'extractAndCopyArticle') {
       copyAndNotify(text);
       sendResponse({ success: true });
     } else {
-      sendResponse({ text });
+      sendResponse({ text: text });
     }
+    return true;
   } else if (request.action === 'extractAllText' || request.action === 'extractAndCopyAllText') {
     const text = extractAllText();
     if (request.action === 'extractAndCopyAllText') {
       copyAndNotify(text);
       sendResponse({ success: true });
     } else {
-      sendResponse({ text });
+      sendResponse({ text: text });
     }
+    return true;
   } else if (request.action === 'getYoutubeTranscript') {
     const language = request.language || 'en';
     getYoutubeTranscript(language).then(transcript => {
@@ -301,8 +306,9 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       } else {
         showNotification('No transcript available for this video');
       }
+      sendResponse({ success: true });
     });
-    sendResponse({ success: true });
+    return true;
   } else if (request.action === 'getAvailableLanguages') {
     (async () => {
       try {
@@ -341,11 +347,12 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   } else if (request.action === 'copyText') {
     copyAndNotify(request.text);
     sendResponse({ success: true });
+    return true;
   } else if (request.action === 'showNotification') {
     showNotification(request.message);
     sendResponse({ success: true });
+    return true;
   }
-  return true;
 });
 
 function extractArticleText() {

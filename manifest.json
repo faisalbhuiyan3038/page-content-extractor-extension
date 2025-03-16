@@ -1,15 +1,24 @@
 {
   "manifest_version": 3,
-  "name": "Page Context Extractor",
+  "name": "Extract Page Context for AI",
   "version": "1.0",
   "description": "Extract readable content from web pages for AI chat context",
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "page-context-extractor@example.com",
+      "strict_min_version": "109.0"
+    },
+    "gecko_android": {
+      "strict_min_version": "113.0"
+    }
+  },
   "permissions": [
     "activeTab",
-    "contextMenus",
     "scripting",
     "clipboardWrite",
     "tabs",
-    "storage"
+    "storage",
+    "contextMenus"
   ],
   "action": {
     "default_popup": "popup.html",
@@ -24,7 +33,9 @@
     }
   },
   "background": {
-    "service_worker": "background.js"
+    "scripts": [
+      "background.js"
+    ]
   },
   "content_scripts": [
     {
